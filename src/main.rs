@@ -1,4 +1,4 @@
-use chrono::{DateTime, Utc, Duration, Local, Datelike, Weekday, NaiveDate, NaiveDateTime};
+use chrono::{DateTime, Utc, Duration, Local, Datelike, Weekday, NaiveDate, NaiveDateTime, TimeZone};
 use serde::{Serialize, Deserialize};
 use std::fs::{File, OpenOptions};
 use std::io::{self, BufReader, BufWriter};
@@ -177,9 +177,9 @@ fn report_summary(time_sheet: &TimeSheet, period_name: &str) -> io::Result<()> {
         _ => return Err(io::Error::new(io::ErrorKind::InvalidInput, "Invalid summary period")),
     };
 
-    let tz_offset = *now_local.offset();
-    let start_interval_utc = DateTime::<Utc>::from_naive_utc_and_offset(start_naive, tz_offset).to_utc();
-    let end_interval_utc = DateTime::<Utc>::from_naive_utc_and_offset(end_naive, tz_offset).to_utc();
+    // Correctly convert the local NaiveDateTime to a UTC DateTime.
+    let start_interval_utc = Local.from_local_datetime(&start_naive).unwrap().to_utc();
+    let end_interval_utc = Local.from_local_datetime(&end_naive).unwrap().to_utc();
 
     let total_duration = calculate_tracked_time_in_interval(time_sheet, start_interval_utc, end_interval_utc);
     println!("Total time tracked for this {}: {}", period_name, format_duration(total_duration));
