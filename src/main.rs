@@ -2,7 +2,7 @@ use chrono::{DateTime, Duration, Utc};
 use serde::{Deserialize, Serialize};
 use std::env;
 use std::fs::{File, OpenOptions};
-use std::io::{self, BufReader, BufWriter, Seek, SeekFrom};
+use std::io::{self, BufReader, BufWriter};
 use std::path::PathBuf;
 
 // Represents a single completed work period with a start and end time.
@@ -31,14 +31,24 @@ fn main() -> io::Result<()> {
 
     let command = &args[1];
     let mut time_sheet = load_or_create_timesheet()?;
+    let mut state_changed = false;
 
     match command.as_str() {
-        "start" => start_tracking(&mut time_sheet)?,
-        "stop" => stop_tracking(&mut time_sheet)?,
+        "start" => {
+            state_changed = start_tracking(&mut time_sheet)?;
+        }
+        "stop" => {
+            state_changed = stop_tracking(&mut time_sheet)?;
+        }
         _ => print_usage(),
     }
 
-    save_timesheet(&time_sheet)?;
+    // Only save the timesheet if a change was actually made.
+    if state_changed {
+        save_timesheet(&time_sheet)?;
+        println!("State saved.");
+    }
+
     Ok(())
 }
 
@@ -102,13 +112,14 @@ fn save_timesheet(time_sheet: &TimeSheet) -> io::Result<()> {
     Ok(())
 }
 
-// Handles the "start" command.
-fn start_tracking(time_sheet: &mut TimeSheet) -> io::Result<()> {
+// Handles the "start" command. Returns true if the state was changed.
+fn start_tracking(time_sheet: &mut TimeSheet) -> io::Result<bool> {
     if let Some(start_time) = time_sheet.active_period_start {
         println!(
             "Already tracking time since {}.",
             start_time.with_timezone(&chrono::Local)
         );
+        Ok(false) // No change was made
     } else {
         let now = Utc::now();
         time_sheet.active_period_start = Some(now);
@@ -116,12 +127,12 @@ fn start_tracking(time_sheet: &mut TimeSheet) -> io::Result<()> {
             "Started tracking time at {}.",
             now.with_timezone(&chrono::Local)
         );
+        Ok(true) // A change was made
     }
-    Ok(())
 }
 
-// Handles the "stop" command.
-fn stop_tracking(time_sheet: &mut TimeSheet) -> io::Result<()> {
+// Handles the "stop" command. Returns true if the state was changed.
+fn stop_tracking(time_sheet: &mut TimeSheet) -> io::Result<bool> {
     if let Some(start_time) = time_sheet.active_period_start.take() {
         let end_time = Utc::now();
         let new_period = Period {
@@ -135,10 +146,11 @@ fn stop_tracking(time_sheet: &mut TimeSheet) -> io::Result<()> {
             end_time.with_timezone(&chrono::Local)
         );
         println!("Duration of last session: {}", format_duration(duration));
+        Ok(true) // A change was made
     } else {
         println!("No active time tracking period to stop.");
+        Ok(false) // No change was made
     }
-    Ok(())
 }
 
 // Formats a Duration into a human-readable string (HH:MM:SS).
