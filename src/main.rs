@@ -1,9 +1,10 @@
-use chrono::{DateTime, Duration, Utc};
-use serde::{Deserialize, Serialize};
-use std::env;
+use chrono::{DateTime, Utc, Duration, Local, Datelike, Weekday, NaiveDate, NaiveDateTime};
+use serde::{Serialize, Deserialize};
 use std::fs::{File, OpenOptions};
 use std::io::{self, BufReader, BufWriter};
+use std::env;
 use std::path::PathBuf;
+use std::cmp;
 
 // Represents a single completed work period with a start and end time.
 #[derive(Serialize, Deserialize, Debug)]
@@ -40,6 +41,9 @@ fn main() -> io::Result<()> {
         "stop" => {
             state_changed = stop_tracking(&mut time_sheet)?;
         }
+        "today" | "week" | "month" => {
+            report_summary(&time_sheet, command.as_str())?;
+        }
         _ => print_usage(),
     }
 
@@ -58,6 +62,9 @@ fn print_usage() {
     println!("Commands:");
     println!("  start   - Start tracking a new time period.");
     println!("  stop    - Stop the currently tracked time period.");
+    println!("  today   - Show tracked time for today.");
+    println!("  week    - Show tracked time for this week.");
+    println!("  month   - Show tracked time for this month.");
 }
 
 // Gets the path to the timesheet data file.
@@ -83,8 +90,7 @@ fn load_or_create_timesheet() -> io::Result<TimeSheet> {
         let file = File::create(&path)?;
         let time_sheet = TimeSheet::default();
         let writer = BufWriter::new(file);
-        serde_json::to_writer_pretty(writer, &time_sheet)
-            .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
+        serde_json::to_writer_pretty(writer, &time_sheet).map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
         return Ok(time_sheet);
     }
 
@@ -101,32 +107,21 @@ fn load_or_create_timesheet() -> io::Result<TimeSheet> {
 // Saves the TimeSheet data to the JSON file.
 fn save_timesheet(time_sheet: &TimeSheet) -> io::Result<()> {
     let path = get_data_file_path()?;
-    let file = OpenOptions::new()
-        .write(true)
-        .truncate(true)
-        .create(true)
-        .open(&path)?;
+    let file = OpenOptions::new().write(true).truncate(true).create(true).open(&path)?;
     let writer = BufWriter::new(file);
-    serde_json::to_writer_pretty(writer, time_sheet)
-        .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
+    serde_json::to_writer_pretty(writer, time_sheet).map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
     Ok(())
 }
 
 // Handles the "start" command. Returns true if the state was changed.
 fn start_tracking(time_sheet: &mut TimeSheet) -> io::Result<bool> {
     if let Some(start_time) = time_sheet.active_period_start {
-        println!(
-            "Already tracking time since {}.",
-            start_time.with_timezone(&chrono::Local)
-        );
+        println!("Already tracking time since {}.", start_time.with_timezone(&Local));
         Ok(false) // No change was made
     } else {
         let now = Utc::now();
         time_sheet.active_period_start = Some(now);
-        println!(
-            "Started tracking time at {}.",
-            now.with_timezone(&chrono::Local)
-        );
+        println!("Started tracking time at {}.", now.with_timezone(&Local));
         Ok(true) // A change was made
     }
 }
@@ -141,10 +136,7 @@ fn stop_tracking(time_sheet: &mut TimeSheet) -> io::Result<bool> {
         };
         time_sheet.periods.push(new_period);
         let duration = end_time - start_time;
-        println!(
-            "Stopped tracking time at {}.",
-            end_time.with_timezone(&chrono::Local)
-        );
+        println!("Stopped tracking time at {}.", end_time.with_timezone(&Local));
         println!("Duration of last session: {}", format_duration(duration));
         Ok(true) // A change was made
     } else {
@@ -153,11 +145,100 @@ fn stop_tracking(time_sheet: &mut TimeSheet) -> io::Result<bool> {
     }
 }
 
+// Generates and prints a summary report for a given period (today, week, month).
+fn report_summary(time_sheet: &TimeSheet, period_name: &str) -> io::Result<()> {
+    let now_local = Local::now();
+    let today_local_naive = now_local.date_naive();
+
+    let (start_naive, end_naive) = match period_name {
+        "today" => {
+            let start = today_local_naive.and_hms_opt(0, 0, 0).unwrap();
+            (start, start + Duration::days(1))
+        }
+        "week" => {
+            let days_from_monday = today_local_naive.weekday().num_days_from_monday();
+            let start_of_week = today_local_naive - Duration::days(days_from_monday as i64);
+            let start = start_of_week.and_hms_opt(0, 0, 0).unwrap();
+            (start, start + Duration::weeks(1))
+        }
+        "month" => {
+            let start_of_month = NaiveDate::from_ymd_opt(today_local_naive.year(), today_local_naive.month(), 1).unwrap();
+            let start = start_of_month.and_hms_opt(0, 0, 0).unwrap();
+            
+            let (next_month_year, next_month) = if today_local_naive.month() == 12 {
+                (today_local_naive.year() + 1, 1)
+            } else {
+                (today_local_naive.year(), today_local_naive.month() + 1)
+            };
+            let start_of_next_month = NaiveDate::from_ymd_opt(next_month_year, next_month, 1).unwrap();
+            let end = start_of_next_month.and_hms_opt(0, 0, 0).unwrap();
+            (start, end)
+        }
+        _ => return Err(io::Error::new(io::ErrorKind::InvalidInput, "Invalid summary period")),
+    };
+
+    let tz_offset = *now_local.offset();
+    let start_interval_utc = DateTime::<Utc>::from_naive_utc_and_offset(start_naive, tz_offset).to_utc();
+    let end_interval_utc = DateTime::<Utc>::from_naive_utc_and_offset(end_naive, tz_offset).to_utc();
+
+    let total_duration = calculate_tracked_time_in_interval(time_sheet, start_interval_utc, end_interval_utc);
+    println!("Total time tracked for this {}: {}", period_name, format_duration(total_duration));
+
+    Ok(())
+}
+
+// Calculates the total tracked time within a given UTC interval,
+// including completed periods and the currently active one.
+fn calculate_tracked_time_in_interval(
+    time_sheet: &TimeSheet,
+    interval_start: DateTime<Utc>,
+    interval_end: DateTime<Utc>,
+) -> Duration {
+    let mut total_duration = Duration::zero();
+
+    // Sum up durations from completed periods that overlap with the interval
+    for period in &time_sheet.periods {
+        let overlap_start = cmp::max(period.start, interval_start);
+        let overlap_end = cmp::min(period.end, interval_end);
+
+        if overlap_start < overlap_end {
+            total_duration = total_duration + (overlap_end - overlap_start);
+        }
+    }
+
+    // If there's an active period, calculate its overlap with the interval
+    if let Some(active_start) = time_sheet.active_period_start {
+        let now_utc = Utc::now();
+        let overlap_start = cmp::max(active_start, interval_start);
+        let overlap_end = cmp::min(now_utc, interval_end);
+
+        if overlap_start < overlap_end {
+            total_duration = total_duration + (overlap_end - overlap_start);
+        }
+    }
+
+    total_duration
+}
+
+
 // Formats a Duration into a human-readable string (HH:MM:SS).
 fn format_duration(duration: Duration) -> String {
+    if duration < Duration::zero() {
+        return "00:00:00".to_string();
+    }
     let seconds = duration.num_seconds();
     let hours = seconds / 3600;
     let minutes = (seconds % 3600) / 60;
     let seconds = seconds % 60;
     format!("{:02}:{:02}:{:02}", hours, minutes, seconds)
 }
+
+// To make this code runnable, you'll need to add the following dependencies
+// to your `Cargo.toml` file:
+//
+// [dependencies]
+// chrono = { version = "0.4", features = ["serde"] }
+// serde = { version = "1.0", features = ["derive"] }
+// serde_json = "1.0"
+// dirs = "5.0"
+
