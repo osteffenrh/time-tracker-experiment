@@ -1,4 +1,4 @@
-use chrono::{DateTime, Utc, Duration, Local, Datelike, Weekday, NaiveDate, NaiveDateTime, TimeZone};
+use chrono::{DateTime, Utc, Duration, Local, Datelike, NaiveDate, TimeZone};
 use serde::{Serialize, Deserialize};
 use std::fs::{File, OpenOptions};
 use std::io::{self, BufReader, BufWriter};
