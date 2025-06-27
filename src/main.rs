@@ -1,11 +1,10 @@
-use chrono::{DateTime, Utc, Duration, Local, Datelike, NaiveDate, TimeZone, Weekday};
+use chrono::{DateTime, Utc, Duration, Local, Datelike, NaiveDate, TimeZone};
 use serde::{Serialize, Deserialize};
 use std::fs::{File, OpenOptions};
 use std::io::{self, BufReader, BufWriter};
 use std::env;
 use std::path::PathBuf;
 use std::cmp;
-use std::iter::Sum;
 
 // Represents a single time period with a start and end time.
 // Added Clone and Copy to make it easier to pass around.
