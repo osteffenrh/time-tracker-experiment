@@ -1,6 +1,6 @@
 //! Contains the core business logic and data structures for the time tracker.
 
-use chrono::{DateTime, Utc, Duration, Local, Datelike, NaiveDate, TimeZone, Weekday};
+use chrono::{DateTime, Utc, Duration, Local, Datelike, NaiveDate, TimeZone};
 use serde::{Serialize, Deserialize};
 use std::cmp;
 use std::io;
