@@ -41,21 +41,32 @@ pub enum ReportingPeriod {
 }
 
 /// Starts a new tracking period in the timesheet.
+/// Optionally offsets the start time by the given duration (relative to now).
 /// Returns an error message if a period is already active.
-pub fn start_tracking(time_sheet: &mut TimeSheet) -> Result<(), &'static str> {
+pub fn start_tracking(time_sheet: &mut TimeSheet, offset: Option<Duration>) -> Result<(), &'static str> {
     if time_sheet.active_period_start.is_some() {
         Err("Already tracking time.")
     } else {
-        time_sheet.active_period_start = Some(Utc::now());
+        let now = Utc::now();
+        let start_time = match offset {
+            Some(dur) => now + dur,
+            None => now,
+        };
+        time_sheet.active_period_start = Some(start_time);
         Ok(())
     }
 }
 
 /// Stops the current tracking period.
+/// Optionally offsets the stop time by the given duration (relative to now).
 /// Returns the duration of the stopped period, or None if no period was active.
-pub fn stop_tracking(time_sheet: &mut TimeSheet) -> Option<Duration> {
+pub fn stop_tracking(time_sheet: &mut TimeSheet, offset: Option<Duration>) -> Option<Duration> {
     if let Some(start_time) = time_sheet.active_period_start.take() {
-        let end_time = Utc::now();
+        let now = Utc::now();
+        let end_time = match offset {
+            Some(dur) => now + dur,
+            None => now,
+        };
         let new_period = Period { start: start_time, end: end_time };
         time_sheet.periods.push(new_period);
         Some(end_time - start_time)

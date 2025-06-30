@@ -7,10 +7,24 @@ use std::io;
 use time_tracker::{logic, storage};
 
 // Main application entry point.
+fn parse_offset(offset_str: &str) -> Option<chrono::Duration> {
+    let negative = offset_str.starts_with('-');
+    let clean = offset_str.trim_start_matches(['-', '+'].as_ref());
+    let parts: Vec<&str> = clean.split(':').collect();
+    if parts.len() != 2 {
+        return None;
+    }
+    let hours: i64 = parts[0].parse().ok()?;
+    let minutes: i64 = parts[1].parse().ok()?;
+    let total_minutes = hours * 60 + minutes;
+    let duration = chrono::Duration::minutes(total_minutes);
+    Some(if negative { -duration } else { duration })
+}
+
 fn main() -> io::Result<()> {
     let args: Vec<String> = env::args().collect();
 
-    if args.len() != 2 {
+    if args.len() < 2 {
         print_usage();
         return Ok(());
     }
@@ -20,15 +34,39 @@ fn main() -> io::Result<()> {
     let mut state_changed = false;
 
     match command.as_str() {
-        "start" => match logic::start_tracking(&mut time_sheet) {
-            Ok(_) => {
-                println!("Started tracking time.");
-                state_changed = true;
+        "start" => {
+            let offset = if args.len() == 3 {
+                match parse_offset(&args[2]) {
+                    Some(dur) => Some(dur),
+                    None => {
+                        eprintln!("Invalid offset format. Use e.g. -1:00 or +0:30");
+                        return Ok(());
+                    }
+                }
+            } else {
+                None
+            };
+            match logic::start_tracking(&mut time_sheet, offset) {
+                Ok(_) => {
+                    println!("Started tracking time.");
+                    state_changed = true;
+                }
+                Err(msg) => println!("{}", msg),
             }
-            Err(msg) => println!("{}", msg),
-        },
+        }
         "stop" => {
-            if let Some(duration) = logic::stop_tracking(&mut time_sheet) {
+            let offset = if args.len() == 3 {
+                match parse_offset(&args[2]) {
+                    Some(dur) => Some(dur),
+                    None => {
+                        eprintln!("Invalid offset format. Use e.g. -1:00 or +0:30");
+                        return Ok(());
+                    }
+                }
+            } else {
+                None
+            };
+            if let Some(duration) = logic::stop_tracking(&mut time_sheet, offset) {
                 println!("Stopped tracking time.");
                 println!("Duration of last session: {}", format_duration(duration));
                 state_changed = true;
