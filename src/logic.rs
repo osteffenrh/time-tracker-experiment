@@ -48,7 +48,7 @@ pub enum TimeSpec {
 }
 
 /// Converts a TimeSpec to a DateTime<Utc>
-fn resolve_time_spec(time_spec: &TimeSpec) -> io::Result<DateTime<Utc>> {
+pub fn resolve_time_spec(time_spec: &TimeSpec) -> io::Result<DateTime<Utc>> {
     match time_spec {
         TimeSpec::Now => Ok(Utc::now()),
         TimeSpec::Offset(duration) => Ok(Utc::now() + *duration),
@@ -166,5 +166,233 @@ pub fn calculate_tracked_time_in_period(time_sheet: &TimeSheet, reporting_period
     });
 
     completed_duration + active_duration
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use chrono::NaiveTime;
+
+    #[test]
+    fn test_period_overlap_no_overlap() {
+        let base_time = Utc::now();
+        let period1 = Period {
+            start: base_time,
+            end: base_time + Duration::hours(1),
+        };
+        let period2 = Period {
+            start: base_time + Duration::hours(2),
+            end: base_time + Duration::hours(3),
+        };
+        
+        assert_eq!(period1.overlap(&period2), Duration::zero());
+        assert_eq!(period2.overlap(&period1), Duration::zero());
+    }
+
+    #[test]
+    fn test_period_overlap_full_overlap() {
+        let base_time = Utc::now();
+        let period1 = Period {
+            start: base_time,
+            end: base_time + Duration::hours(2),
+        };
+        let period2 = Period {
+            start: base_time + Duration::minutes(30),
+            end: base_time + Duration::hours(1),
+        };
+        
+        assert_eq!(period1.overlap(&period2), Duration::minutes(30));
+        assert_eq!(period2.overlap(&period1), Duration::minutes(30));
+    }
+
+    #[test]
+    fn test_period_overlap_partial_overlap() {
+        let base_time = Utc::now();
+        let period1 = Period {
+            start: base_time,
+            end: base_time + Duration::hours(2),
+        };
+        let period2 = Period {
+            start: base_time + Duration::hours(1),
+            end: base_time + Duration::hours(3),
+        };
+        
+        assert_eq!(period1.overlap(&period2), Duration::hours(1));
+        assert_eq!(period2.overlap(&period1), Duration::hours(1));
+    }
+
+    #[test]
+    fn test_period_overlap_identical_periods() {
+        let base_time = Utc::now();
+        let period1 = Period {
+            start: base_time,
+            end: base_time + Duration::hours(1),
+        };
+        let period2 = Period {
+            start: base_time,
+            end: base_time + Duration::hours(1),
+        };
+        
+        assert_eq!(period1.overlap(&period2), Duration::hours(1));
+    }
+
+    #[test]
+    fn test_period_overlap_touching_periods() {
+        let base_time = Utc::now();
+        let period1 = Period {
+            start: base_time,
+            end: base_time + Duration::hours(1),
+        };
+        let period2 = Period {
+            start: base_time + Duration::hours(1),
+            end: base_time + Duration::hours(2),
+        };
+        
+        assert_eq!(period1.overlap(&period2), Duration::zero());
+    }
+
+    #[test]
+    fn test_resolve_time_spec_now() {
+        let before = Utc::now();
+        let result = resolve_time_spec(&TimeSpec::Now).unwrap();
+        let after = Utc::now();
+        
+        assert!(result >= before && result <= after);
+    }
+
+    #[test]
+    fn test_resolve_time_spec_offset_positive() {
+        let offset = Duration::hours(1);
+        let before = Utc::now() + offset;
+        let result = resolve_time_spec(&TimeSpec::Offset(offset)).unwrap();
+        let after = Utc::now() + offset;
+        
+        assert!(result >= before && result <= after);
+    }
+
+    #[test]
+    fn test_resolve_time_spec_offset_negative() {
+        let offset = Duration::hours(-1);
+        let before = Utc::now() + offset;
+        let result = resolve_time_spec(&TimeSpec::Offset(offset)).unwrap();
+        let after = Utc::now() + offset;
+        
+        assert!(result >= before && result <= after);
+    }
+
+    #[test]
+    fn test_resolve_time_spec_absolute() {
+        let time = NaiveTime::from_hms_opt(14, 30, 0).unwrap();
+        let result = resolve_time_spec(&TimeSpec::Absolute(time)).unwrap();
+        
+        let result_local = result.with_timezone(&Local);
+        assert_eq!(result_local.time(), time);
+    }
+
+    #[test]
+    fn test_start_tracking_success() {
+        let mut time_sheet = TimeSheet::default();
+        let result = start_tracking(&mut time_sheet, None);
+        
+        assert!(result.is_ok());
+        assert!(time_sheet.active_period_start.is_some());
+    }
+
+    #[test]
+    fn test_start_tracking_already_active() {
+        let mut time_sheet = TimeSheet::default();
+        time_sheet.active_period_start = Some(Utc::now());
+        let result = start_tracking(&mut time_sheet, None);
+        
+        assert!(result.is_err());
+        assert_eq!(result.unwrap_err(), "Already tracking time.");
+    }
+
+    #[test]
+    fn test_stop_tracking_success() {
+        let mut time_sheet = TimeSheet::default();
+        let start_time = Utc::now();
+        time_sheet.active_period_start = Some(start_time);
+        
+        let result = stop_tracking(&mut time_sheet, None);
+        
+        assert!(result.is_some());
+        assert!(time_sheet.active_period_start.is_none());
+        assert_eq!(time_sheet.periods.len(), 1);
+        assert_eq!(time_sheet.periods[0].start, start_time);
+    }
+
+    #[test]
+    fn test_stop_tracking_no_active_period() {
+        let mut time_sheet = TimeSheet::default();
+        let result = stop_tracking(&mut time_sheet, None);
+        
+        assert!(result.is_none());
+        assert_eq!(time_sheet.periods.len(), 0);
+    }
+
+    #[test]
+    fn test_get_today_period() {
+        let result = get_today_period();
+        assert!(result.is_ok());
+        
+        let period = result.unwrap();
+        let duration = period.end - period.start;
+        assert_eq!(duration, Duration::days(1));
+    }
+
+    #[test]
+    fn test_get_week_period() {
+        let result = get_week_period();
+        assert!(result.is_ok());
+        
+        let period = result.unwrap();
+        let duration = period.end - period.start;
+        assert_eq!(duration, Duration::weeks(1));
+    }
+
+    #[test]
+    fn test_get_month_period() {
+        let result = get_month_period();
+        assert!(result.is_ok());
+        
+        let period = result.unwrap();
+        let duration = period.end - period.start;
+        assert!(duration >= Duration::days(28) && duration <= Duration::days(31));
+    }
+
+    #[test]
+    fn test_calculate_tracked_time_no_periods() {
+        let time_sheet = TimeSheet::default();
+        let reporting_period = Period {
+            start: Utc::now(),
+            end: Utc::now() + Duration::hours(8),
+        };
+        
+        let result = calculate_tracked_time_in_period(&time_sheet, &reporting_period);
+        assert_eq!(result, Duration::zero());
+    }
+
+    #[test]
+    fn test_calculate_tracked_time_with_completed_periods() {
+        let base_time = Utc::now();
+        let mut time_sheet = TimeSheet::default();
+        time_sheet.periods.push(Period {
+            start: base_time,
+            end: base_time + Duration::hours(2),
+        });
+        time_sheet.periods.push(Period {
+            start: base_time + Duration::hours(3),
+            end: base_time + Duration::hours(4),
+        });
+        
+        let reporting_period = Period {
+            start: base_time,
+            end: base_time + Duration::hours(8),
+        };
+        
+        let result = calculate_tracked_time_in_period(&time_sheet, &reporting_period);
+        assert_eq!(result, Duration::hours(3));
+    }
 }
 
