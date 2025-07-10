@@ -1,24 +1,44 @@
 //! The command-line interface for the work time tracker.
 //! This module handles argument parsing and user-facing I/O.
 
-use chrono::Duration;
+use chrono::{Duration, NaiveTime};
 use std::env;
 use std::io;
 use time_tracker::{logic, storage};
 
 // Main application entry point.
-fn parse_offset(offset_str: &str) -> Option<chrono::Duration> {
-    let negative = offset_str.starts_with('-');
-    let clean = offset_str.trim_start_matches(['-', '+'].as_ref());
-    let parts: Vec<&str> = clean.split(':').collect();
-    if parts.len() != 2 {
-        return None;
+
+/// Parse time input - either offset (±H:MM) or absolute time (H:MM)
+fn parse_time_spec(time_str: &str) -> Option<logic::TimeSpec> {
+    if time_str.starts_with('+') || time_str.starts_with('-') {
+        // Handle offset format
+        let negative = time_str.starts_with('-');
+        let clean = time_str.trim_start_matches(['-', '+'].as_ref());
+        let parts: Vec<&str> = clean.split(':').collect();
+        if parts.len() != 2 {
+            return None;
+        }
+        let hours: i64 = parts[0].parse().ok()?;
+        let minutes: i64 = parts[1].parse().ok()?;
+        let total_minutes = hours * 60 + minutes;
+        let duration = Duration::minutes(total_minutes);
+        let offset = if negative { -duration } else { duration };
+        Some(logic::TimeSpec::Offset(offset))
+    } else {
+        // Handle absolute time format (H:MM)
+        let parts: Vec<&str> = time_str.split(':').collect();
+        if parts.len() != 2 {
+            return None;
+        }
+        let hours: u32 = parts[0].parse().ok()?;
+        let minutes: u32 = parts[1].parse().ok()?;
+        if hours >= 24 || minutes >= 60 {
+            return None;
+        }
+        
+        let naive_time = NaiveTime::from_hms_opt(hours, minutes, 0)?;
+        Some(logic::TimeSpec::Absolute(naive_time))
     }
-    let hours: i64 = parts[0].parse().ok()?;
-    let minutes: i64 = parts[1].parse().ok()?;
-    let total_minutes = hours * 60 + minutes;
-    let duration = chrono::Duration::minutes(total_minutes);
-    Some(if negative { -duration } else { duration })
 }
 
 fn main() -> io::Result<()> {
@@ -35,18 +55,18 @@ fn main() -> io::Result<()> {
 
     match command.as_str() {
         "start" => {
-            let offset = if args.len() == 3 {
-                match parse_offset(&args[2]) {
-                    Some(dur) => Some(dur),
+            let time_spec = if args.len() == 3 {
+                match parse_time_spec(&args[2]) {
+                    Some(spec) => Some(spec),
                     None => {
-                        eprintln!("Invalid offset format. Use e.g. -1:00 or +0:30");
+                        eprintln!("Invalid time format. Use offset (e.g. -1:00, +0:30) or absolute time (e.g. 14:30)");
                         return Ok(());
                     }
                 }
             } else {
                 None
             };
-            match logic::start_tracking(&mut time_sheet, offset) {
+            match logic::start_tracking(&mut time_sheet, time_spec) {
                 Ok(_) => {
                     println!("Started tracking time.");
                     state_changed = true;
@@ -55,18 +75,18 @@ fn main() -> io::Result<()> {
             }
         }
         "stop" => {
-            let offset = if args.len() == 3 {
-                match parse_offset(&args[2]) {
-                    Some(dur) => Some(dur),
+            let time_spec = if args.len() == 3 {
+                match parse_time_spec(&args[2]) {
+                    Some(spec) => Some(spec),
                     None => {
-                        eprintln!("Invalid offset format. Use e.g. -1:00 or +0:30");
+                        eprintln!("Invalid time format. Use offset (e.g. -1:00, +0:30) or absolute time (e.g. 14:30)");
                         return Ok(());
                     }
                 }
             } else {
                 None
             };
-            if let Some(duration) = logic::stop_tracking(&mut time_sheet, offset) {
+            if let Some(duration) = logic::stop_tracking(&mut time_sheet, time_spec) {
                 println!("Stopped tracking time.");
                 println!("Duration of last session: {}", format_duration(duration));
                 state_changed = true;
@@ -114,8 +134,9 @@ fn handle_report(
 fn print_usage() {
     println!("Usage: work_time_tracker <command>");
     println!("Commands:");
-    println!("  start   - Start tracking a new time period.");
-    println!("  stop    - Stop the currently tracked time period.");
+    println!("  start [time]   - Start tracking a new time period.");
+    println!("  stop [time]    - Stop the currently tracked time period.");
+    println!("                   Time can be offset (±H:MM) or absolute (H:MM).");
     println!("  today   - Show tracked time for today.");
     println!("  week    - Show tracked time for this week.");
     println!("  month   - Show tracked time for this month.");

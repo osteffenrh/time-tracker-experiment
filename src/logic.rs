@@ -1,6 +1,6 @@
 //! Contains the core business logic and data structures for the time tracker.
 
-use chrono::{DateTime, Utc, Duration, Local, Datelike, NaiveDate, TimeZone};
+use chrono::{DateTime, Utc, Duration, Local, Datelike, NaiveDate, TimeZone, NaiveTime};
 use serde::{Serialize, Deserialize};
 use std::cmp;
 use std::io;
@@ -40,17 +40,36 @@ pub enum ReportingPeriod {
     Month,
 }
 
+/// Enum to specify different ways to set time (now, offset, or absolute time today)
+pub enum TimeSpec {
+    Now,
+    Offset(Duration),
+    Absolute(NaiveTime),
+}
+
+/// Converts a TimeSpec to a DateTime<Utc>
+fn resolve_time_spec(time_spec: &TimeSpec) -> io::Result<DateTime<Utc>> {
+    match time_spec {
+        TimeSpec::Now => Ok(Utc::now()),
+        TimeSpec::Offset(duration) => Ok(Utc::now() + *duration),
+        TimeSpec::Absolute(naive_time) => {
+            let today_local = Local::now().date_naive();
+            let today_datetime = today_local.and_time(*naive_time);
+            naive_to_utc(today_datetime)
+        }
+    }
+}
+
 /// Starts a new tracking period in the timesheet.
-/// Optionally offsets the start time by the given duration (relative to now).
+/// Optionally uses the specified time spec, otherwise uses current time.
 /// Returns an error message if a period is already active.
-pub fn start_tracking(time_sheet: &mut TimeSheet, offset: Option<Duration>) -> Result<(), &'static str> {
+pub fn start_tracking(time_sheet: &mut TimeSheet, time_spec: Option<TimeSpec>) -> Result<(), &'static str> {
     if time_sheet.active_period_start.is_some() {
         Err("Already tracking time.")
     } else {
-        let now = Utc::now();
-        let start_time = match offset {
-            Some(dur) => now + dur,
-            None => now,
+        let start_time = match time_spec {
+            Some(spec) => resolve_time_spec(&spec).map_err(|_| "Invalid time specification")?,
+            None => Utc::now(),
         };
         time_sheet.active_period_start = Some(start_time);
         Ok(())
@@ -58,14 +77,13 @@ pub fn start_tracking(time_sheet: &mut TimeSheet, offset: Option<Duration>) -> R
 }
 
 /// Stops the current tracking period.
-/// Optionally offsets the stop time by the given duration (relative to now).
+/// Optionally uses the specified time spec, otherwise uses current time.
 /// Returns the duration of the stopped period, or None if no period was active.
-pub fn stop_tracking(time_sheet: &mut TimeSheet, offset: Option<Duration>) -> Option<Duration> {
+pub fn stop_tracking(time_sheet: &mut TimeSheet, time_spec: Option<TimeSpec>) -> Option<Duration> {
     if let Some(start_time) = time_sheet.active_period_start.take() {
-        let now = Utc::now();
-        let end_time = match offset {
-            Some(dur) => now + dur,
-            None => now,
+        let end_time = match time_spec {
+            Some(spec) => resolve_time_spec(&spec).ok()?,
+            None => Utc::now(),
         };
         let new_period = Period { start: start_time, end: end_time };
         time_sheet.periods.push(new_period);
