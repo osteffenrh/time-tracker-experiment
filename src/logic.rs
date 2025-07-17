@@ -236,8 +236,12 @@ pub fn get_target_duration_for_period(
     let mut total_hours = 0.0;
     let mut current_day = reporting_period.start.with_timezone(&Local).date_naive();
     let end_day = reporting_period.end.with_timezone(&Local).date_naive();
+    let today = Local::now().date_naive();
 
     while current_day < end_day {
+        if current_day > today {
+            break;
+        }
         total_hours += get_hours_for_day(work_hours, current_day.weekday());
         current_day += Duration::days(1);
     }
@@ -538,5 +542,31 @@ mod tests {
         assert_eq!(breakdown[4].1, Duration::zero());
         assert_eq!(breakdown[5].1, Duration::zero());
         assert_eq!(breakdown[6].1, Duration::zero());
+    }
+
+    #[test]
+    fn test_get_target_duration_for_period_week_in_progress() {
+        let work_hours = WeekdayHours {
+            monday: 8.0,
+            tuesday: 8.0,
+            wednesday: 8.0,
+            thursday: 8.0,
+            friday: 8.0,
+        };
+
+        let reporting_period = get_week_period().unwrap();
+        let today = Local::now().date_naive();
+        let days_from_monday = today.weekday().num_days_from_monday();
+
+        // Calculate expected hours based on the current day of the week
+        let expected_hours = if days_from_monday >= 5 {
+            // Full week from Monday to Friday
+            5.0 * 8.0
+        } else {
+            (days_from_monday as f32 + 1.0) * 8.0
+        };
+
+        let result = get_target_duration_for_period(&work_hours, &reporting_period);
+        assert_eq!(result, Duration::hours(expected_hours as i64));
     }
 }
