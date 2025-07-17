@@ -1,6 +1,7 @@
 //! Contains the core business logic and data structures for the time tracker.
 
-use chrono::{DateTime, Datelike, Duration, Local, NaiveDate, NaiveTime, TimeZone, Utc};
+use crate::config::WeekdayHours;
+use chrono::{DateTime, Datelike, Duration, Local, NaiveDate, NaiveTime, TimeZone, Utc, Weekday};
 use serde::{Deserialize, Serialize};
 use std::cmp;
 use std::io;
@@ -114,16 +115,20 @@ fn naive_to_utc(naive_dt: chrono::NaiveDateTime) -> io::Result<DateTime<Utc>> {
     }
 }
 
-/// Generates a Period struct representing the current day.
-pub fn get_today_period() -> io::Result<Period> {
-    let now_local = Local::now();
-    let today_local_naive = now_local.date_naive();
-    let start_naive = today_local_naive.and_hms_opt(0, 0, 0).unwrap();
+pub fn get_day_period(date: NaiveDate) -> io::Result<Period> {
+    let start_naive = date.and_hms_opt(0, 0, 0).unwrap();
     let end_naive = start_naive + Duration::days(1);
     Ok(Period {
         start: naive_to_utc(start_naive)?,
         end: naive_to_utc(end_naive)?,
     })
+}
+
+/// Generates a Period struct representing the current day.
+pub fn get_today_period() -> io::Result<Period> {
+    let now_local = Local::now();
+    let today_local_naive = now_local.date_naive();
+    get_day_period(today_local_naive)
 }
 
 /// Generates a Period struct representing the current week.
@@ -210,6 +215,34 @@ pub fn get_week_breakdown_for_date(
     }
 
     Ok(daily_totals)
+}
+
+fn get_hours_for_day(work_hours: &WeekdayHours, day: Weekday) -> f32 {
+    match day {
+        Weekday::Mon => work_hours.monday,
+        Weekday::Tue => work_hours.tuesday,
+        Weekday::Wed => work_hours.wednesday,
+        Weekday::Thu => work_hours.thursday,
+        Weekday::Fri => work_hours.friday,
+        Weekday::Sat | Weekday::Sun => 0.0,
+    }
+}
+
+/// Calculates the total target work duration for a given period based on configured work hours.
+pub fn get_target_duration_for_period(
+    work_hours: &WeekdayHours,
+    reporting_period: &Period,
+) -> Duration {
+    let mut total_hours = 0.0;
+    let mut current_day = reporting_period.start.with_timezone(&Local).date_naive();
+    let end_day = reporting_period.end.with_timezone(&Local).date_naive();
+
+    while current_day < end_day {
+        total_hours += get_hours_for_day(work_hours, current_day.weekday());
+        current_day += Duration::days(1);
+    }
+
+    Duration::seconds((total_hours * 3600.0) as i64)
 }
 
 #[cfg(test)]

@@ -42,7 +42,7 @@ fn parse_time_spec(time_str: &str) -> Option<logic::TimeSpec> {
 }
 
 fn main() -> io::Result<()> {
-    let _config = config::load_config()?;
+    let config = config::load_config()?;
     let args: Vec<String> = env::args().collect();
 
     if args.len() < 2 {
@@ -99,10 +99,10 @@ fn main() -> io::Result<()> {
                 println!("No active time tracking period to stop.");
             }
         }
-        "today" => handle_report(&time_sheet, logic::ReportingPeriod::Today, "today")?,
-        "week" => handle_report(&time_sheet, logic::ReportingPeriod::Week, "week")?,
-        "week-breakdown" => handle_week_breakdown_report(&time_sheet)?,
-        "month" => handle_report(&time_sheet, logic::ReportingPeriod::Month, "month")?,
+        "today" => handle_report(&time_sheet, &config, logic::ReportingPeriod::Today, "today")?,
+        "week" => handle_report(&time_sheet, &config, logic::ReportingPeriod::Week, "week")?,
+        "week-breakdown" => handle_week_breakdown_report(&time_sheet, &config)?,
+        "month" => handle_report(&time_sheet, &config, logic::ReportingPeriod::Month, "month")?,
         _ => print_usage(),
     }
 
@@ -117,6 +117,7 @@ fn main() -> io::Result<()> {
 /// Handles generating and printing a summary report.
 fn handle_report(
     time_sheet: &logic::TimeSheet,
+    config: &config::Config,
     period: logic::ReportingPeriod,
     period_name: &str,
 ) -> io::Result<()> {
@@ -127,39 +128,73 @@ fn handle_report(
     };
 
     let total_duration = logic::calculate_tracked_time_in_period(time_sheet, &reporting_period);
+    let target_duration =
+        logic::get_target_duration_for_period(&config.work_hours, &reporting_period);
+
+    let percentage = if target_duration > Duration::zero() {
+        (total_duration.num_seconds() as f64 / target_duration.num_seconds() as f64) * 100.0
+    } else {
+        0.0
+    };
+
     println!(
-        "Total time tracked for this {}: {}",
+        "Total time tracked for this {}: {} / {} ({:.2}%)",
         period_name,
-        format_duration(total_duration)
+        format_duration(total_duration),
+        format_duration(target_duration),
+        percentage
     );
 
     Ok(())
 }
 
 /// Handles generating and printing a week breakdown report.
-fn handle_week_breakdown_report(time_sheet: &logic::TimeSheet) -> io::Result<()> {
+fn handle_week_breakdown_report(
+    time_sheet: &logic::TimeSheet,
+    config: &config::Config,
+) -> io::Result<()> {
     let today = chrono::Local::now().date_naive();
     let breakdown = logic::get_week_breakdown_for_date(time_sheet, today)?;
 
     println!("Time tracked this week (by day):");
 
     let mut total_duration = Duration::zero();
+    let mut total_target_duration = Duration::zero();
 
     for (date, duration) in breakdown {
+        let daily_target_hours =
+            logic::get_target_duration_for_period(&config.work_hours, &logic::get_day_period(date)?);
+        let percentage = if daily_target_hours > Duration::zero() {
+            (duration.num_seconds() as f64 / daily_target_hours.num_seconds() as f64) * 100.0
+        } else {
+            0.0
+        };
+
         println!(
-            "  {:<10} ({}): {}",
+            "  {:<10} ({}): {} / {} ({:.2}%)",
             date.weekday(),
             date.format("%Y-%m-%d"),
-            format_duration(duration)
+            format_duration(duration),
+            format_duration(daily_target_hours),
+            percentage
         );
         total_duration += duration;
+        total_target_duration += daily_target_hours;
     }
+
+    let total_percentage = if total_target_duration > Duration::zero() {
+        (total_duration.num_seconds() as f64 / total_target_duration.num_seconds() as f64) * 100.0
+    } else {
+        0.0
+    };
 
     println!("------------------------------------");
     println!(
-        "  {:<25}: {}",
+        "  {:<25}: {} / {} ({:.2}%)",
         "Total for the week",
-        format_duration(total_duration)
+        format_duration(total_duration),
+        format_duration(total_target_duration),
+        total_percentage
     );
 
     Ok(())
