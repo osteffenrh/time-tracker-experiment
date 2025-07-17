@@ -224,7 +224,8 @@ fn get_hours_for_day(work_hours: &WeekdayHours, day: Weekday) -> f32 {
         Weekday::Wed => work_hours.wednesday,
         Weekday::Thu => work_hours.thursday,
         Weekday::Fri => work_hours.friday,
-        Weekday::Sat | Weekday::Sun => 0.0,
+        Weekday::Sat => work_hours.saturday,
+        Weekday::Sun => work_hours.sunday,
     }
 }
 
@@ -552,6 +553,8 @@ mod tests {
             wednesday: 8.0,
             thursday: 8.0,
             friday: 8.0,
+            saturday: 0.0,
+            sunday: 0.0,
         };
 
         let reporting_period = get_week_period().unwrap();

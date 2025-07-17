@@ -23,6 +23,10 @@ pub struct WeekdayHours {
     pub thursday: f32,
     #[serde(default = "default_hours")]
     pub friday: f32,
+    #[serde(default = "default_weekend_hours")]
+    pub saturday: f32,
+    #[serde(default = "default_weekend_hours")]
+    pub sunday: f32,
 }
 
 impl Default for WeekdayHours {
@@ -33,12 +37,18 @@ impl Default for WeekdayHours {
             wednesday: default_hours(),
             thursday: default_hours(),
             friday: default_hours(),
+            saturday: default_weekend_hours(),
+            sunday: default_weekend_hours(),
         }
     }
 }
 
 fn default_hours() -> f32 {
     8.0
+}
+
+fn default_weekend_hours() -> f32 {
+    0.0
 }
 
 fn get_config_path() -> io::Result<PathBuf> {
@@ -81,6 +91,8 @@ mod tests {
         let config = load_config().unwrap();
         assert_eq!(config.work_hours.monday, 8.0);
         assert_eq!(config.work_hours.friday, 8.0);
+        assert_eq!(config.work_hours.saturday, 0.0);
+        assert_eq!(config.work_hours.sunday, 0.0);
     }
 
     #[test]
@@ -93,6 +105,8 @@ mod tests {
         let config: Config = toml::from_str(&content).unwrap();
         assert_eq!(config.work_hours.monday, 8.0);
         assert_eq!(config.work_hours.friday, 8.0);
+        assert_eq!(config.work_hours.saturday, 0.0);
+        assert_eq!(config.work_hours.sunday, 0.0);
     }
 
     #[test]
@@ -105,6 +119,7 @@ mod tests {
             r#"
 [work_hours]
 friday = 4.5
+saturday = 2.0
 "#
         )
         .unwrap();
@@ -116,6 +131,8 @@ friday = 4.5
         assert_eq!(config.work_hours.wednesday, 8.0);
         assert_eq!(config.work_hours.thursday, 8.0);
         assert_eq!(config.work_hours.friday, 4.5);
+        assert_eq!(config.work_hours.saturday, 2.0);
+        assert_eq!(config.work_hours.sunday, 0.0);
     }
 
     #[test]
