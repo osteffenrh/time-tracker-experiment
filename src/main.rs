@@ -4,7 +4,7 @@
 use chrono::{Datelike, Duration, NaiveTime};
 use std::env;
 use std::io;
-use time_tracker::{logic, storage};
+use time_tracker::{config, logic, storage};
 
 // Main application entry point.
 
@@ -42,6 +42,7 @@ fn parse_time_spec(time_str: &str) -> Option<logic::TimeSpec> {
 }
 
 fn main() -> io::Result<()> {
+    let _config = config::load_config()?;
     let args: Vec<String> = env::args().collect();
 
     if args.len() < 2 {
