@@ -9,12 +9,11 @@ use std::path::PathBuf;
 pub struct Config {}
 
 fn get_config_path() -> io::Result<PathBuf> {
-    let xdg_dirs = xdg::BaseDirectories::with_prefix("time_tracker")
-        .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
+    let xdg_dirs = xdg::BaseDirectories::with_prefix("time_tracker").map_err(io::Error::other)?;
     // This will create a file at ~/.config/time_tracker/config.toml
     xdg_dirs
         .place_config_file("config.toml")
-        .map_err(|e| io::Error::new(io::ErrorKind::Other, e))
+        .map_err(io::Error::other)
 }
 
 pub fn load_config() -> io::Result<Config> {
@@ -32,7 +31,7 @@ pub fn load_config() -> io::Result<Config> {
         return Ok(Config::default());
     }
 
-    toml::from_str(&content).map_err(|e| io::Error::new(io::ErrorKind::Other, e))
+    toml::from_str(&content).map_err(io::Error::other)
 }
 
 #[cfg(test)]
