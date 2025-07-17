@@ -6,7 +6,40 @@ use std::io;
 use std::path::PathBuf;
 
 #[derive(Deserialize, Debug, Default)]
-pub struct Config {}
+pub struct Config {
+    #[serde(default)]
+    pub work_hours: WeekdayHours,
+}
+
+#[derive(Deserialize, Debug)]
+pub struct WeekdayHours {
+    #[serde(default = "default_hours")]
+    pub monday: f32,
+    #[serde(default = "default_hours")]
+    pub tuesday: f32,
+    #[serde(default = "default_hours")]
+    pub wednesday: f32,
+    #[serde(default = "default_hours")]
+    pub thursday: f32,
+    #[serde(default = "default_hours")]
+    pub friday: f32,
+}
+
+impl Default for WeekdayHours {
+    fn default() -> Self {
+        Self {
+            monday: default_hours(),
+            tuesday: default_hours(),
+            wednesday: default_hours(),
+            thursday: default_hours(),
+            friday: default_hours(),
+        }
+    }
+}
+
+fn default_hours() -> f32 {
+    8.0
+}
 
 fn get_config_path() -> io::Result<PathBuf> {
     let xdg_dirs = xdg::BaseDirectories::with_prefix("time_tracker").map_err(io::Error::other)?;
@@ -46,7 +79,8 @@ mod tests {
         // This test relies on the fact that the config file doesn't exist in the test environment.
         // It's a bit of a weak test, but it's the best we can do without mocking the XDG directories.
         let config = load_config().unwrap();
-        assert!(matches!(config, Config {}));
+        assert_eq!(config.work_hours.monday, 8.0);
+        assert_eq!(config.work_hours.friday, 8.0);
     }
 
     #[test]
@@ -57,7 +91,31 @@ mod tests {
 
         let content = fs::read_to_string(&config_path).unwrap();
         let config: Config = toml::from_str(&content).unwrap();
-        assert!(matches!(config, Config {}));
+        assert_eq!(config.work_hours.monday, 8.0);
+        assert_eq!(config.work_hours.friday, 8.0);
+    }
+
+    #[test]
+    fn test_load_config_partial() {
+        let dir = tempdir().unwrap();
+        let config_path = dir.path().join("config.toml");
+        let mut file = File::create(&config_path).unwrap();
+        writeln!(
+            file,
+            r#"
+[work_hours]
+friday = 4.5
+"#
+        )
+        .unwrap();
+
+        let content = fs::read_to_string(&config_path).unwrap();
+        let config: Config = toml::from_str(&content).unwrap();
+        assert_eq!(config.work_hours.monday, 8.0);
+        assert_eq!(config.work_hours.tuesday, 8.0);
+        assert_eq!(config.work_hours.wednesday, 8.0);
+        assert_eq!(config.work_hours.thursday, 8.0);
+        assert_eq!(config.work_hours.friday, 4.5);
     }
 
     #[test]
