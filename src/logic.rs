@@ -104,12 +104,12 @@ fn naive_to_utc(naive_dt: chrono::NaiveDateTime) -> io::Result<DateTime<Utc>> {
     match Local.from_local_datetime(&naive_dt) {
         chrono::LocalResult::Single(dt) => Ok(dt.to_utc()),
         chrono::LocalResult::Ambiguous(dt1, dt2) => {
-            let msg = format!("Ambiguous local time during conversion: {} or {}", dt1, dt2);
-            Err(io::Error::new(io::ErrorKind::Other, msg))
+            let msg = format!("Ambiguous local time during conversion: {dt1} or {dt2}");
+            Err(io::Error::other(msg))
         }
         chrono::LocalResult::None => {
-            let msg = format!("Invalid local time during conversion: {}", naive_dt);
-            Err(io::Error::new(io::ErrorKind::Other, msg))
+            let msg = format!("Invalid local time during conversion: {naive_dt}");
+            Err(io::Error::other(msg))
         }
     }
 }
@@ -344,8 +344,10 @@ mod tests {
 
     #[test]
     fn test_start_tracking_already_active() {
-        let mut time_sheet = TimeSheet::default();
-        time_sheet.active_period_start = Some(Utc::now());
+        let mut time_sheet = TimeSheet {
+            active_period_start: Some(Utc::now()),
+            ..Default::default()
+        };
         let result = start_tracking(&mut time_sheet, None);
 
         assert!(result.is_err());

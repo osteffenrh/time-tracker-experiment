@@ -73,7 +73,7 @@ fn main() -> io::Result<()> {
                     println!("Started tracking time.");
                     state_changed = true;
                 }
-                Err(msg) => println!("{}", msg),
+                Err(msg) => println!("{msg}"),
             }
         }
         "stop" => {
@@ -151,7 +151,7 @@ fn handle_week_breakdown_report(time_sheet: &logic::TimeSheet) -> io::Result<()>
             date.format("%Y-%m-%d"),
             format_duration(duration)
         );
-        total_duration = total_duration + duration;
+        total_duration += duration;
     }
 
     println!("------------------------------------");
@@ -186,5 +186,5 @@ fn format_duration(duration: Duration) -> String {
     let hours = seconds / 3600;
     let minutes = (seconds % 3600) / 60;
     let seconds = seconds % 60;
-    format!("{:02}:{:02}:{:02}", hours, minutes, seconds)
+    format!("{hours:02}:{minutes:02}:{seconds:02}")
 }

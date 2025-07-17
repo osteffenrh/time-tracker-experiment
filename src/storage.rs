@@ -33,7 +33,7 @@ pub fn load_timesheet() -> io::Result<TimeSheet> {
     match serde_json::from_reader(reader) {
         Ok(time_sheet) => Ok(time_sheet),
         Err(e) if e.is_eof() => Ok(TimeSheet::default()), // Handle empty file
-        Err(e) => Err(io::Error::new(io::ErrorKind::Other, e)),
+        Err(e) => Err(io::Error::other(e)),
     }
 }
 
@@ -46,8 +46,7 @@ pub fn save_timesheet(time_sheet: &TimeSheet) -> io::Result<()> {
         .create(true)
         .open(&path)?;
     let writer = BufWriter::new(file);
-    serde_json::to_writer_pretty(writer, time_sheet)
-        .map_err(|e| io::Error::new(io::ErrorKind::Other, e))
+    serde_json::to_writer_pretty(writer, time_sheet).map_err(io::Error::other)
 }
 
 /// Saves the TimeSheet data to a specific file path (for testing).
@@ -58,8 +57,7 @@ pub fn save_timesheet_to_path(time_sheet: &TimeSheet, path: &std::path::Path) ->
         .create(true)
         .open(path)?;
     let writer = BufWriter::new(file);
-    serde_json::to_writer_pretty(writer, time_sheet)
-        .map_err(|e| io::Error::new(io::ErrorKind::Other, e))
+    serde_json::to_writer_pretty(writer, time_sheet).map_err(io::Error::other)
 }
 
 /// Loads a TimeSheet from a specific file path (for testing).
@@ -74,7 +72,7 @@ pub fn load_timesheet_from_path(path: &std::path::Path) -> io::Result<TimeSheet>
     match serde_json::from_reader(reader) {
         Ok(time_sheet) => Ok(time_sheet),
         Err(e) if e.is_eof() => Ok(TimeSheet::default()),
-        Err(e) => Err(io::Error::new(io::ErrorKind::Other, e)),
+        Err(e) => Err(io::Error::other(e)),
     }
 }
 
