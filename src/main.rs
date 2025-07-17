@@ -1,7 +1,7 @@
 //! The command-line interface for the work time tracker.
 //! This module handles argument parsing and user-facing I/O.
 
-use chrono::{Duration, NaiveTime};
+use chrono::{Datelike, Duration, NaiveTime};
 use std::env;
 use std::io;
 use time_tracker::{logic, storage};
@@ -35,7 +35,7 @@ fn parse_time_spec(time_str: &str) -> Option<logic::TimeSpec> {
         if hours >= 24 || minutes >= 60 {
             return None;
         }
-        
+
         let naive_time = NaiveTime::from_hms_opt(hours, minutes, 0)?;
         Some(logic::TimeSpec::Absolute(naive_time))
     }
@@ -59,7 +59,9 @@ fn main() -> io::Result<()> {
                 match parse_time_spec(&args[2]) {
                     Some(spec) => Some(spec),
                     None => {
-                        eprintln!("Invalid time format. Use offset (e.g. -1:00, +0:30) or absolute time (e.g. 14:30)");
+                        eprintln!(
+                            "Invalid time format. Use offset (e.g. -1:00, +0:30) or absolute time (e.g. 14:30)"
+                        );
                         return Ok(());
                     }
                 }
@@ -79,7 +81,9 @@ fn main() -> io::Result<()> {
                 match parse_time_spec(&args[2]) {
                     Some(spec) => Some(spec),
                     None => {
-                        eprintln!("Invalid time format. Use offset (e.g. -1:00, +0:30) or absolute time (e.g. 14:30)");
+                        eprintln!(
+                            "Invalid time format. Use offset (e.g. -1:00, +0:30) or absolute time (e.g. 14:30)"
+                        );
                         return Ok(());
                     }
                 }
@@ -96,6 +100,7 @@ fn main() -> io::Result<()> {
         }
         "today" => handle_report(&time_sheet, logic::ReportingPeriod::Today, "today")?,
         "week" => handle_report(&time_sheet, logic::ReportingPeriod::Week, "week")?,
+        "week-breakdown" => handle_week_breakdown_report(&time_sheet)?,
         "month" => handle_report(&time_sheet, logic::ReportingPeriod::Month, "month")?,
         _ => print_usage(),
     }
@@ -130,6 +135,35 @@ fn handle_report(
     Ok(())
 }
 
+/// Handles generating and printing a week breakdown report.
+fn handle_week_breakdown_report(time_sheet: &logic::TimeSheet) -> io::Result<()> {
+    let today = chrono::Local::now().date_naive();
+    let breakdown = logic::get_week_breakdown_for_date(time_sheet, today)?;
+
+    println!("Time tracked this week (by day):");
+
+    let mut total_duration = Duration::zero();
+
+    for (date, duration) in breakdown {
+        println!(
+            "  {:<10} ({}): {}",
+            date.weekday(),
+            date.format("%Y-%m-%d"),
+            format_duration(duration)
+        );
+        total_duration = total_duration + duration;
+    }
+
+    println!("------------------------------------");
+    println!(
+        "  {:<25}: {}",
+        "Total for the week",
+        format_duration(total_duration)
+    );
+
+    Ok(())
+}
+
 /// Prints the usage instructions for the command-line tool.
 fn print_usage() {
     println!("Usage: work_time_tracker <command>");
@@ -139,6 +173,7 @@ fn print_usage() {
     println!("                   Time can be offset (±H:MM) or absolute (H:MM).");
     println!("  today   - Show tracked time for today.");
     println!("  week    - Show tracked time for this week.");
+    println!("  week-breakdown - Show a daily breakdown of tracked time for this week.");
     println!("  month   - Show tracked time for this month.");
 }
 

@@ -1,7 +1,7 @@
 //! Contains the core business logic and data structures for the time tracker.
 
-use chrono::{DateTime, Utc, Duration, Local, Datelike, NaiveDate, TimeZone, NaiveTime};
-use serde::{Serialize, Deserialize};
+use chrono::{DateTime, Datelike, Duration, Local, NaiveDate, NaiveTime, TimeZone, Utc};
+use serde::{Deserialize, Serialize};
 use std::cmp;
 use std::io;
 
@@ -63,7 +63,10 @@ pub fn resolve_time_spec(time_spec: &TimeSpec) -> io::Result<DateTime<Utc>> {
 /// Starts a new tracking period in the timesheet.
 /// Optionally uses the specified time spec, otherwise uses current time.
 /// Returns an error message if a period is already active.
-pub fn start_tracking(time_sheet: &mut TimeSheet, time_spec: Option<TimeSpec>) -> Result<(), &'static str> {
+pub fn start_tracking(
+    time_sheet: &mut TimeSheet,
+    time_spec: Option<TimeSpec>,
+) -> Result<(), &'static str> {
     if time_sheet.active_period_start.is_some() {
         Err("Already tracking time.")
     } else {
@@ -85,7 +88,10 @@ pub fn stop_tracking(time_sheet: &mut TimeSheet, time_spec: Option<TimeSpec>) ->
             Some(spec) => resolve_time_spec(&spec).ok()?,
             None => Utc::now(),
         };
-        let new_period = Period { start: start_time, end: end_time };
+        let new_period = Period {
+            start: start_time,
+            end: end_time,
+        };
         time_sheet.periods.push(new_period);
         Some(end_time - start_time)
     } else {
@@ -100,7 +106,7 @@ fn naive_to_utc(naive_dt: chrono::NaiveDateTime) -> io::Result<DateTime<Utc>> {
         chrono::LocalResult::Ambiguous(dt1, dt2) => {
             let msg = format!("Ambiguous local time during conversion: {} or {}", dt1, dt2);
             Err(io::Error::new(io::ErrorKind::Other, msg))
-        },
+        }
         chrono::LocalResult::None => {
             let msg = format!("Invalid local time during conversion: {}", naive_dt);
             Err(io::Error::new(io::ErrorKind::Other, msg))
@@ -138,14 +144,16 @@ pub fn get_week_period() -> io::Result<Period> {
 pub fn get_month_period() -> io::Result<Period> {
     let now_local = Local::now();
     let today_local_naive = now_local.date_naive();
-    let start_of_month_naive = NaiveDate::from_ymd_opt(today_local_naive.year(), today_local_naive.month(), 1).unwrap();
+    let start_of_month_naive =
+        NaiveDate::from_ymd_opt(today_local_naive.year(), today_local_naive.month(), 1).unwrap();
     let start_naive = start_of_month_naive.and_hms_opt(0, 0, 0).unwrap();
     let (next_month_year, next_month) = if today_local_naive.month() == 12 {
         (today_local_naive.year() + 1, 1)
     } else {
         (today_local_naive.year(), today_local_naive.month() + 1)
     };
-    let start_of_next_month_naive = NaiveDate::from_ymd_opt(next_month_year, next_month, 1).unwrap();
+    let start_of_next_month_naive =
+        NaiveDate::from_ymd_opt(next_month_year, next_month, 1).unwrap();
     let end_naive = start_of_next_month_naive.and_hms_opt(0, 0, 0).unwrap();
     Ok(Period {
         start: naive_to_utc(start_naive)?,
@@ -154,18 +162,54 @@ pub fn get_month_period() -> io::Result<Period> {
 }
 
 /// Calculates the total tracked time within a given period using iterators.
-pub fn calculate_tracked_time_in_period(time_sheet: &TimeSheet, reporting_period: &Period) -> Duration {
-    let completed_duration: Duration = time_sheet.periods
+pub fn calculate_tracked_time_in_period(
+    time_sheet: &TimeSheet,
+    reporting_period: &Period,
+) -> Duration {
+    let completed_duration: Duration = time_sheet
+        .periods
         .iter()
         .map(|p| p.overlap(reporting_period))
         .sum();
 
-    let active_duration = time_sheet.active_period_start.map_or(Duration::zero(), |start| {
-        let active_period = Period { start, end: Utc::now() };
-        active_period.overlap(reporting_period)
-    });
+    let active_duration = time_sheet
+        .active_period_start
+        .map_or(Duration::zero(), |start| {
+            let active_period = Period {
+                start,
+                end: Utc::now(),
+            };
+            active_period.overlap(reporting_period)
+        });
 
     completed_duration + active_duration
+}
+
+/// Calculates the tracked time for each day of the week containing the given date.
+pub fn get_week_breakdown_for_date(
+    time_sheet: &TimeSheet,
+    date: NaiveDate,
+) -> io::Result<Vec<(NaiveDate, Duration)>> {
+    let days_from_monday = date.weekday().num_days_from_monday();
+    let start_of_week_naive = date - Duration::days(days_from_monday as i64);
+
+    let mut daily_totals = Vec::new();
+
+    for i in 0..7 {
+        let current_day_naive = start_of_week_naive + Duration::days(i);
+        let start_naive = current_day_naive.and_hms_opt(0, 0, 0).unwrap();
+        let end_naive = start_naive + Duration::days(1);
+
+        let reporting_period = Period {
+            start: naive_to_utc(start_naive)?,
+            end: naive_to_utc(end_naive)?,
+        };
+
+        let daily_duration = calculate_tracked_time_in_period(time_sheet, &reporting_period);
+        daily_totals.push((current_day_naive, daily_duration));
+    }
+
+    Ok(daily_totals)
 }
 
 #[cfg(test)]
@@ -184,7 +228,7 @@ mod tests {
             start: base_time + Duration::hours(2),
             end: base_time + Duration::hours(3),
         };
-        
+
         assert_eq!(period1.overlap(&period2), Duration::zero());
         assert_eq!(period2.overlap(&period1), Duration::zero());
     }
@@ -200,7 +244,7 @@ mod tests {
             start: base_time + Duration::minutes(30),
             end: base_time + Duration::hours(1),
         };
-        
+
         assert_eq!(period1.overlap(&period2), Duration::minutes(30));
         assert_eq!(period2.overlap(&period1), Duration::minutes(30));
     }
@@ -216,7 +260,7 @@ mod tests {
             start: base_time + Duration::hours(1),
             end: base_time + Duration::hours(3),
         };
-        
+
         assert_eq!(period1.overlap(&period2), Duration::hours(1));
         assert_eq!(period2.overlap(&period1), Duration::hours(1));
     }
@@ -232,7 +276,7 @@ mod tests {
             start: base_time,
             end: base_time + Duration::hours(1),
         };
-        
+
         assert_eq!(period1.overlap(&period2), Duration::hours(1));
     }
 
@@ -247,7 +291,7 @@ mod tests {
             start: base_time + Duration::hours(1),
             end: base_time + Duration::hours(2),
         };
-        
+
         assert_eq!(period1.overlap(&period2), Duration::zero());
     }
 
@@ -256,7 +300,7 @@ mod tests {
         let before = Utc::now();
         let result = resolve_time_spec(&TimeSpec::Now).unwrap();
         let after = Utc::now();
-        
+
         assert!(result >= before && result <= after);
     }
 
@@ -266,7 +310,7 @@ mod tests {
         let before = Utc::now() + offset;
         let result = resolve_time_spec(&TimeSpec::Offset(offset)).unwrap();
         let after = Utc::now() + offset;
-        
+
         assert!(result >= before && result <= after);
     }
 
@@ -276,7 +320,7 @@ mod tests {
         let before = Utc::now() + offset;
         let result = resolve_time_spec(&TimeSpec::Offset(offset)).unwrap();
         let after = Utc::now() + offset;
-        
+
         assert!(result >= before && result <= after);
     }
 
@@ -284,7 +328,7 @@ mod tests {
     fn test_resolve_time_spec_absolute() {
         let time = NaiveTime::from_hms_opt(14, 30, 0).unwrap();
         let result = resolve_time_spec(&TimeSpec::Absolute(time)).unwrap();
-        
+
         let result_local = result.with_timezone(&Local);
         assert_eq!(result_local.time(), time);
     }
@@ -293,7 +337,7 @@ mod tests {
     fn test_start_tracking_success() {
         let mut time_sheet = TimeSheet::default();
         let result = start_tracking(&mut time_sheet, None);
-        
+
         assert!(result.is_ok());
         assert!(time_sheet.active_period_start.is_some());
     }
@@ -303,7 +347,7 @@ mod tests {
         let mut time_sheet = TimeSheet::default();
         time_sheet.active_period_start = Some(Utc::now());
         let result = start_tracking(&mut time_sheet, None);
-        
+
         assert!(result.is_err());
         assert_eq!(result.unwrap_err(), "Already tracking time.");
     }
@@ -313,9 +357,9 @@ mod tests {
         let mut time_sheet = TimeSheet::default();
         let start_time = Utc::now();
         time_sheet.active_period_start = Some(start_time);
-        
+
         let result = stop_tracking(&mut time_sheet, None);
-        
+
         assert!(result.is_some());
         assert!(time_sheet.active_period_start.is_none());
         assert_eq!(time_sheet.periods.len(), 1);
@@ -326,7 +370,7 @@ mod tests {
     fn test_stop_tracking_no_active_period() {
         let mut time_sheet = TimeSheet::default();
         let result = stop_tracking(&mut time_sheet, None);
-        
+
         assert!(result.is_none());
         assert_eq!(time_sheet.periods.len(), 0);
     }
@@ -335,7 +379,7 @@ mod tests {
     fn test_get_today_period() {
         let result = get_today_period();
         assert!(result.is_ok());
-        
+
         let period = result.unwrap();
         let duration = period.end - period.start;
         assert_eq!(duration, Duration::days(1));
@@ -345,7 +389,7 @@ mod tests {
     fn test_get_week_period() {
         let result = get_week_period();
         assert!(result.is_ok());
-        
+
         let period = result.unwrap();
         let duration = period.end - period.start;
         assert_eq!(duration, Duration::weeks(1));
@@ -355,7 +399,7 @@ mod tests {
     fn test_get_month_period() {
         let result = get_month_period();
         assert!(result.is_ok());
-        
+
         let period = result.unwrap();
         let duration = period.end - period.start;
         assert!(duration >= Duration::days(28) && duration <= Duration::days(31));
@@ -368,7 +412,7 @@ mod tests {
             start: Utc::now(),
             end: Utc::now() + Duration::hours(8),
         };
-        
+
         let result = calculate_tracked_time_in_period(&time_sheet, &reporting_period);
         assert_eq!(result, Duration::zero());
     }
@@ -385,14 +429,79 @@ mod tests {
             start: base_time + Duration::hours(3),
             end: base_time + Duration::hours(4),
         });
-        
+
         let reporting_period = Period {
             start: base_time,
             end: base_time + Duration::hours(8),
         };
-        
+
         let result = calculate_tracked_time_in_period(&time_sheet, &reporting_period);
         assert_eq!(result, Duration::hours(3));
     }
-}
 
+    #[test]
+    fn test_get_week_breakdown_for_date() {
+        let mut time_sheet = TimeSheet::default();
+
+        // Test week is Mon 16th Oct 2023 to Sun 22nd Oct 2023.
+        // We'll use Wednesday 18th as the "today" for the test.
+        let test_date = NaiveDate::from_ymd_opt(2023, 10, 18).unwrap();
+
+        // Period on Monday (16th) for 2 hours.
+        let monday_start = NaiveDate::from_ymd_opt(2023, 10, 16)
+            .unwrap()
+            .and_hms_opt(9, 0, 0)
+            .unwrap();
+        time_sheet.periods.push(Period {
+            start: naive_to_utc(monday_start).unwrap(),
+            end: naive_to_utc(monday_start).unwrap() + Duration::hours(2),
+        });
+
+        // Period on Wednesday (18th) for 3 hours.
+        let wednesday_start = NaiveDate::from_ymd_opt(2023, 10, 18)
+            .unwrap()
+            .and_hms_opt(13, 0, 0)
+            .unwrap();
+        time_sheet.periods.push(Period {
+            start: naive_to_utc(wednesday_start).unwrap(),
+            end: naive_to_utc(wednesday_start).unwrap() + Duration::hours(3),
+        });
+
+        let breakdown = get_week_breakdown_for_date(&time_sheet, test_date).unwrap();
+
+        assert_eq!(breakdown.len(), 7);
+
+        // Monday
+        assert_eq!(
+            breakdown[0].0,
+            NaiveDate::from_ymd_opt(2023, 10, 16).unwrap()
+        );
+        assert_eq!(breakdown[0].1, Duration::hours(2));
+
+        // Tuesday
+        assert_eq!(
+            breakdown[1].0,
+            NaiveDate::from_ymd_opt(2023, 10, 17).unwrap()
+        );
+        assert_eq!(breakdown[1].1, Duration::zero());
+
+        // Wednesday
+        assert_eq!(
+            breakdown[2].0,
+            NaiveDate::from_ymd_opt(2023, 10, 18).unwrap()
+        );
+        assert_eq!(breakdown[2].1, Duration::hours(3));
+
+        // Thursday
+        assert_eq!(
+            breakdown[3].0,
+            NaiveDate::from_ymd_opt(2023, 10, 19).unwrap()
+        );
+        assert_eq!(breakdown[3].1, Duration::zero());
+
+        // Rest of the week
+        assert_eq!(breakdown[4].1, Duration::zero());
+        assert_eq!(breakdown[5].1, Duration::zero());
+        assert_eq!(breakdown[6].1, Duration::zero());
+    }
+}
