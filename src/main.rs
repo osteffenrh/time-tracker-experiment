@@ -183,18 +183,20 @@ fn handle_week_breakdown_report(
     let mut total_target_duration = Duration::zero();
 
     for (date, duration) in breakdown {
+        let daily_target_hours = logic::get_target_duration_for_period(
+            time_sheet,
+            &config.work_hours,
+            &logic::get_day_period(date)?,
+        );
+
         if time_sheet.sick_days.contains(&date) {
             println!(
-                "  {:<10} ({}): sick day",
+                "  {:<10} ({}): {} (sick day)",
                 date.weekday(),
-                date.format("%Y-%m-%d")
+                date.format("%Y-%m-%d"),
+                format_duration(duration)
             );
         } else {
-            let daily_target_hours = logic::get_target_duration_for_period(
-                time_sheet,
-                &config.work_hours,
-                &logic::get_day_period(date)?,
-            );
             let percentage = if daily_target_hours > Duration::zero() {
                 (duration.num_seconds() as f64 / daily_target_hours.num_seconds() as f64) * 100.0
             } else {
@@ -209,9 +211,9 @@ fn handle_week_breakdown_report(
                 format_duration(daily_target_hours),
                 percentage
             );
-            total_duration += duration;
-            total_target_duration += daily_target_hours;
         }
+        total_duration += duration;
+        total_target_duration += daily_target_hours;
     }
 
     let total_percentage = if total_target_duration > Duration::zero() {
