@@ -1,7 +1,7 @@
 //! The command-line interface for the work time tracker.
 //! This module handles argument parsing and user-facing I/O.
 
-use chrono::{Datelike, Duration, NaiveTime};
+use chrono::{Datelike, Duration, NaiveDate, NaiveTime};
 use std::env;
 use std::io;
 use time_tracker::{config, logic, storage};
@@ -99,6 +99,27 @@ fn main() -> io::Result<()> {
                 println!("No active time tracking period to stop.");
             }
         }
+        "sick" => {
+            let date = if args.len() == 3 {
+                match NaiveDate::parse_from_str(&args[2], "%Y-%m-%d") {
+                    Ok(date) => date,
+                    Err(_) => {
+                        eprintln!("Invalid date format. Please use YYYY-MM-DD.");
+                        return Ok(());
+                    }
+                }
+            } else {
+                chrono::Local::now().date_naive()
+            };
+
+            match logic::mark_sick_day(&mut time_sheet, date) {
+                Ok(_) => {
+                    println!("Marked {} as a sick day.", date.format("%Y-%m-%d"));
+                    state_changed = true;
+                }
+                Err(msg) => eprintln!("Error: {msg}"),
+            }
+        }
         "today" => handle_report(&time_sheet, &config, logic::ReportingPeriod::Today, "today")?,
         "week" => handle_report(&time_sheet, &config, logic::ReportingPeriod::Week, "week")?,
         "week-breakdown" => handle_week_breakdown_report(&time_sheet, &config)?,
@@ -129,7 +150,7 @@ fn handle_report(
 
     let total_duration = logic::calculate_tracked_time_in_period(time_sheet, &reporting_period);
     let target_duration =
-        logic::get_target_duration_for_period(&config.work_hours, &reporting_period);
+        logic::get_target_duration_for_period(time_sheet, &config.work_hours, &reporting_period);
 
     let percentage = if target_duration > Duration::zero() {
         (total_duration.num_seconds() as f64 / target_duration.num_seconds() as f64) * 100.0
@@ -163,6 +184,7 @@ fn handle_week_breakdown_report(
 
     for (date, duration) in breakdown {
         let daily_target_hours = logic::get_target_duration_for_period(
+            time_sheet,
             &config.work_hours,
             &logic::get_day_period(date)?,
         );
@@ -209,6 +231,7 @@ fn print_usage() {
     println!("  start [time]   - Start tracking a new time period.");
     println!("  stop [time]    - Stop the currently tracked time period.");
     println!("                   Time can be offset (±H:MM) or absolute (H:MM).");
+    println!("  sick [date]    - Mark a date as a sick day (YYYY-MM-DD). Defaults to today.");
     println!("  today   - Show tracked time for today.");
     println!("  week    - Show tracked time for this week.");
     println!("  week-breakdown - Show a daily breakdown of tracked time for this week.");

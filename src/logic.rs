@@ -32,6 +32,8 @@ impl Period {
 pub struct TimeSheet {
     pub periods: Vec<Period>,
     pub active_period_start: Option<DateTime<Utc>>,
+    #[serde(default)]
+    pub sick_days: Vec<NaiveDate>,
 }
 
 /// Enum to provide compile-time safety for selecting a reporting interval.
@@ -98,6 +100,18 @@ pub fn stop_tracking(time_sheet: &mut TimeSheet, time_spec: Option<TimeSpec>) ->
     } else {
         None
     }
+}
+
+/// Marks a specific date as a sick day, provided it is not in the future.
+pub fn mark_sick_day(time_sheet: &mut TimeSheet, date: NaiveDate) -> Result<(), &'static str> {
+    if date > Local::now().date_naive() {
+        return Err("Cannot mark a future date as a sick day.");
+    }
+    if !time_sheet.sick_days.contains(&date) {
+        time_sheet.sick_days.push(date);
+        time_sheet.sick_days.sort_unstable();
+    }
+    Ok(())
 }
 
 /// Safely converts a NaiveDateTime in the local timezone to a UTC DateTime.
@@ -231,6 +245,7 @@ fn get_hours_for_day(work_hours: &WeekdayHours, day: Weekday) -> f32 {
 
 /// Calculates the total target work duration for a given period based on configured work hours.
 pub fn get_target_duration_for_period(
+    time_sheet: &TimeSheet,
     work_hours: &WeekdayHours,
     reporting_period: &Period,
 ) -> Duration {
@@ -243,7 +258,9 @@ pub fn get_target_duration_for_period(
         if current_day > today {
             break;
         }
-        total_hours += get_hours_for_day(work_hours, current_day.weekday());
+        if !time_sheet.sick_days.contains(&current_day) {
+            total_hours += get_hours_for_day(work_hours, current_day.weekday());
+        }
         current_day += Duration::days(1);
     }
 
@@ -556,6 +573,7 @@ mod tests {
             saturday: 0.0,
             sunday: 0.0,
         };
+        let time_sheet = TimeSheet::default();
 
         let reporting_period = get_week_period().unwrap();
         let today = Local::now().date_naive();
@@ -569,7 +587,67 @@ mod tests {
             (days_from_monday as f32 + 1.0) * 8.0
         };
 
-        let result = get_target_duration_for_period(&work_hours, &reporting_period);
+        let result = get_target_duration_for_period(&time_sheet, &work_hours, &reporting_period);
+        assert_eq!(result, Duration::hours(expected_hours as i64));
+    }
+
+    #[test]
+    fn test_mark_sick_day() {
+        let mut time_sheet = TimeSheet::default();
+        let today = Local::now().date_naive();
+        let yesterday = today - Duration::days(1);
+
+        assert!(mark_sick_day(&mut time_sheet, today).is_ok());
+        assert_eq!(time_sheet.sick_days, vec![today]);
+
+        // Mark the same day again, should not add a duplicate
+        assert!(mark_sick_day(&mut time_sheet, today).is_ok());
+        assert_eq!(time_sheet.sick_days, vec![today]);
+
+        assert!(mark_sick_day(&mut time_sheet, yesterday).is_ok());
+        assert_eq!(time_sheet.sick_days, vec![yesterday, today]); // Should be sorted
+    }
+
+    #[test]
+    fn test_mark_sick_day_future_date() {
+        let mut time_sheet = TimeSheet::default();
+        let tomorrow = Local::now().date_naive() + Duration::days(1);
+        assert!(mark_sick_day(&mut time_sheet, tomorrow).is_err());
+    }
+
+    #[test]
+    fn test_get_target_duration_with_sick_day() {
+        let work_hours = WeekdayHours {
+            monday: 8.0,
+            tuesday: 8.0,
+            wednesday: 8.0,
+            thursday: 8.0,
+            friday: 8.0,
+            saturday: 4.0,
+            sunday: 0.0,
+        };
+        let mut time_sheet = TimeSheet::default();
+        let today = Local::now().date_naive();
+        let reporting_period = get_week_period().unwrap();
+
+        // Mark a weekday as a sick day
+        let sick_day =
+            reporting_period.start.with_timezone(&Local).date_naive() + Duration::days(2); // Wednesday
+        mark_sick_day(&mut time_sheet, sick_day).unwrap();
+
+        let days_from_monday = today.weekday().num_days_from_monday();
+        let mut expected_hours = if days_from_monday >= 5 {
+            5.0 * 8.0 + 4.0 // Full week + Saturday
+        } else {
+            (days_from_monday as f32 + 1.0) * 8.0
+        };
+
+        // If the sick day has passed, subtract its hours
+        if today.weekday().num_days_from_monday() >= 2 {
+            expected_hours -= 8.0;
+        }
+
+        let result = get_target_duration_for_period(&time_sheet, &work_hours, &reporting_period);
         assert_eq!(result, Duration::hours(expected_hours as i64));
     }
 }
