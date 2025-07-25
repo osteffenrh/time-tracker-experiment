@@ -4,6 +4,7 @@
 use chrono::{Datelike, Duration, NaiveDate, NaiveTime};
 use std::env;
 use std::io;
+use std::process::Command;
 use time_tracker::{config, logic, storage};
 
 // Main application entry point.
@@ -120,6 +121,11 @@ fn main() -> io::Result<()> {
                 Err(msg) => eprintln!("Error: {msg}"),
             }
         }
+        "edit" => {
+            if let Err(e) = open_in_editor() {
+                eprintln!("Failed to open editor: {e}");
+            }
+        }
         "today" => handle_report(&time_sheet, &config, logic::ReportingPeriod::Today, "today")?,
         "week" => handle_report(&time_sheet, &config, logic::ReportingPeriod::Week, "week")?,
         "week-breakdown" => handle_week_breakdown_report(&time_sheet, &config)?,
@@ -130,6 +136,20 @@ fn main() -> io::Result<()> {
     if state_changed {
         storage::save_timesheet(&time_sheet)?;
         println!("State saved.");
+    }
+
+    Ok(())
+}
+
+/// Opens the timesheet data file in the default editor.
+fn open_in_editor() -> io::Result<()> {
+    let editor = env::var("EDITOR").unwrap_or_else(|_| "vi".to_string());
+    let path = storage::get_storage_path()?;
+
+    let status = Command::new(editor).arg(path).status()?;
+
+    if !status.success() {
+        return Err(io::Error::other("Editor command failed"));
     }
 
     Ok(())
@@ -242,10 +262,11 @@ fn print_usage() {
     println!("  stop [time]    - Stop the currently tracked time period.");
     println!("                   Time can be offset (±H:MM) or absolute (H:MM).");
     println!("  sick [date]    - Mark a date as a sick day (YYYY-MM-DD). Defaults to today.");
-    println!("  today   - Show tracked time for today.");
-    println!("  week    - Show tracked time for this week.");
+    println!("  edit           - Open the data file in the default editor.");
+    println!("  today          - Show tracked time for today.");
+    println!("  week           - Show tracked time for this week.");
     println!("  week-breakdown - Show a daily breakdown of tracked time for this week.");
-    println!("  month   - Show tracked time for this month.");
+    println!("  month          - Show tracked time for this month.");
 }
 
 /// Formats a Duration into a human-readable string (HH:MM:SS).

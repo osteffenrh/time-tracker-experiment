@@ -7,7 +7,7 @@ use std::path::PathBuf;
 
 /// Gets the path to the timesheet data file, adhering to the XDG Base Directory spec.
 /// This function also handles migrating the data file from its legacy location.
-fn get_storage_path() -> io::Result<PathBuf> {
+pub fn get_storage_path() -> io::Result<PathBuf> {
     // 1. Get the XDG data path
     let xdg_dirs = xdg::BaseDirectories::with_prefix("time_tracker").map_err(io::Error::other)?;
     let new_path = xdg_dirs.place_data_file("timesheet.json")?;
