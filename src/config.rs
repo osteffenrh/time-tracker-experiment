@@ -86,13 +86,20 @@ mod tests {
 
     #[test]
     fn test_load_config_no_file() {
-        // This test relies on the fact that the config file doesn't exist in the test environment.
-        // It's a bit of a weak test, but it's the best we can do without mocking the XDG directories.
+        let dir = tempdir().unwrap();
+        unsafe {
+            std::env::set_var("XDG_CONFIG_HOME", dir.path());
+        }
+
         let config = load_config().unwrap();
         assert_eq!(config.work_hours.monday, 8.0);
         assert_eq!(config.work_hours.friday, 8.0);
         assert_eq!(config.work_hours.saturday, 0.0);
         assert_eq!(config.work_hours.sunday, 0.0);
+
+        unsafe {
+            std::env::remove_var("XDG_CONFIG_HOME");
+        }
     }
 
     #[test]
