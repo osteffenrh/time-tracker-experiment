@@ -43,7 +43,6 @@ fn parse_time_spec(time_str: &str) -> Option<logic::TimeSpec> {
 }
 
 fn main() -> io::Result<()> {
-    let config = config::load_config()?;
     let args: Vec<String> = env::args().collect();
 
     if args.len() < 2 {
@@ -52,6 +51,16 @@ fn main() -> io::Result<()> {
     }
 
     let command = &args[1];
+
+    // Handle the "edit" command separately to avoid loading a potentially broken timesheet.
+    if command == "edit" {
+        if let Err(e) = open_in_editor() {
+            eprintln!("Failed to open editor: {e}");
+        }
+        return Ok(());
+    }
+
+    let config = config::load_config()?;
     let mut time_sheet = storage::load_timesheet()?;
     let mut state_changed = false;
 
@@ -119,11 +128,6 @@ fn main() -> io::Result<()> {
                     state_changed = true;
                 }
                 Err(msg) => eprintln!("Error: {msg}"),
-            }
-        }
-        "edit" => {
-            if let Err(e) = open_in_editor() {
-                eprintln!("Failed to open editor: {e}");
             }
         }
         "today" => handle_report(&time_sheet, &config, logic::ReportingPeriod::Today, "today")?,
