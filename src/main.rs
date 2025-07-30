@@ -134,6 +134,7 @@ fn main() -> io::Result<()> {
         "week" => handle_report(&time_sheet, &config, logic::ReportingPeriod::Week, "week")?,
         "week-breakdown" => handle_week_breakdown_report(&time_sheet, &config)?,
         "month" => handle_report(&time_sheet, &config, logic::ReportingPeriod::Month, "month")?,
+        "progress" => handle_progress_report(&time_sheet, &config)?,
         _ => print_usage(),
     }
 
@@ -258,6 +259,41 @@ fn handle_week_breakdown_report(
     Ok(())
 }
 
+/// Handles generating and printing a progress bar for today's tracked time.
+fn handle_progress_report(
+    time_sheet: &logic::TimeSheet,
+    config: &config::Config,
+) -> io::Result<()> {
+    let reporting_period = logic::get_today_period()?;
+    let total_duration = logic::calculate_tracked_time_in_period(time_sheet, &reporting_period);
+    let target_duration =
+        logic::get_target_duration_for_period(time_sheet, &config.work_hours, &reporting_period);
+
+    if target_duration <= Duration::zero() {
+        // No target time set for today, so don't show a progress bar.
+        return Ok(());
+    }
+
+    let percentage =
+        (total_duration.num_seconds() as f64 / target_duration.num_seconds() as f64) * 100.0;
+
+    let bar_width = 6;
+    let filled_width = (percentage / 100.0 * bar_width as f64).round() as usize;
+    let bar = "█".repeat(filled_width.min(bar_width))
+        + &" ".repeat(bar_width.saturating_sub(filled_width));
+
+    if percentage >= 100.0 {
+        let overtime = total_duration - target_duration;
+        let overtime_hours = overtime.num_hours();
+        let overtime_minutes = overtime.num_minutes() % 60;
+        println!("[{bar}] +{overtime_hours:02}:{overtime_minutes:02}");
+    } else {
+        println!("[{bar}] {percentage:.0}%");
+    }
+
+    Ok(())
+}
+
 /// Prints the usage instructions for the command-line tool.
 fn print_usage() {
     println!("Usage: work_time_tracker <command>");
@@ -271,6 +307,7 @@ fn print_usage() {
     println!("  week           - Show tracked time for this week.");
     println!("  week-breakdown - Show a daily breakdown of tracked time for this week.");
     println!("  month          - Show tracked time for this month.");
+    println!("  progress       - Show a progress bar for today's tracked time.");
 }
 
 /// Formats a Duration into a human-readable string (HH:MM:SS).
