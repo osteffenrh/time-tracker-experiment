@@ -267,10 +267,55 @@ pub fn get_target_duration_for_period(
     Duration::seconds((total_hours * 3600.0) as i64)
 }
 
+/// Formats a Duration into a human-readable string (HH:MM:SS).
+pub fn format_duration(duration: Duration) -> String {
+    if duration < Duration::zero() {
+        return "00:00:00".to_string();
+    }
+    let seconds = duration.num_seconds();
+    let hours = seconds / 3600;
+    let minutes = (seconds % 3600) / 60;
+    let seconds = seconds % 60;
+    format!("{hours:02}:{minutes:02}:{seconds:02}")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use chrono::NaiveTime;
+
+    #[test]
+    fn test_format_duration_zero() {
+        assert_eq!(format_duration(Duration::zero()), "00:00:00");
+    }
+
+    #[test]
+    fn test_format_duration_seconds() {
+        assert_eq!(format_duration(Duration::seconds(45)), "00:00:45");
+    }
+
+    #[test]
+    fn test_format_duration_minutes() {
+        assert_eq!(format_duration(Duration::minutes(15)), "00:15:00");
+    }
+
+    #[test]
+    fn test_format_duration_hours() {
+        assert_eq!(format_duration(Duration::hours(3)), "03:00:00");
+    }
+
+    #[test]
+    fn test_format_duration_mixed() {
+        assert_eq!(
+            format_duration(Duration::hours(1) + Duration::minutes(30) + Duration::seconds(5)),
+            "01:30:05"
+        );
+    }
+
+    #[test]
+    fn test_format_duration_negative() {
+        assert_eq!(format_duration(Duration::hours(-1)), "00:00:00");
+    }
 
     #[test]
     fn test_period_overlap_no_overlap() {

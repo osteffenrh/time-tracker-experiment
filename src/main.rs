@@ -16,7 +16,7 @@ fn parse_time_spec(time_str: &str) -> Option<logic::TimeSpec> {
         let negative = time_str.starts_with('-');
         let clean = time_str.trim_start_matches(['-', '+'].as_ref());
         let parts: Vec<&str> = clean.split(':').collect();
-        if parts.len() != 2 {
+        if parts.len() != 2 || parts[0].len() > 2 || parts[1].len() != 2 {
             return None;
         }
         let hours: i64 = parts[0].parse().ok()?;
@@ -28,7 +28,7 @@ fn parse_time_spec(time_str: &str) -> Option<logic::TimeSpec> {
     } else {
         // Handle absolute time format (H:MM)
         let parts: Vec<&str> = time_str.split(':').collect();
-        if parts.len() != 2 {
+        if parts.len() != 2 || parts[0].len() > 2 || parts[1].len() != 2 {
             return None;
         }
         let hours: u32 = parts[0].parse().ok()?;
@@ -103,7 +103,10 @@ fn main() -> io::Result<()> {
             };
             if let Some(duration) = logic::stop_tracking(&mut time_sheet, time_spec) {
                 println!("Stopped tracking time.");
-                println!("Duration of last session: {}", format_duration(duration));
+                println!(
+                    "Duration of last session: {}",
+                    logic::format_duration(duration)
+                );
                 state_changed = true;
             } else {
                 println!("No active time tracking period to stop.");
@@ -186,8 +189,8 @@ fn handle_report(
     println!(
         "Total time tracked for this {}: {} / {} ({:.2}%)",
         period_name,
-        format_duration(total_duration),
-        format_duration(target_duration),
+        logic::format_duration(total_duration),
+        logic::format_duration(target_duration),
         percentage
     );
 
@@ -219,7 +222,7 @@ fn handle_week_breakdown_report(
                 "  {:<10} ({}): {} (sick day)",
                 date.weekday(),
                 date.format("%Y-%m-%d"),
-                format_duration(duration)
+                logic::format_duration(duration)
             );
         } else {
             let percentage = if daily_target_hours > Duration::zero() {
@@ -232,8 +235,8 @@ fn handle_week_breakdown_report(
                 "  {:<10} ({}): {} / {} ({:.2}%)",
                 date.weekday(),
                 date.format("%Y-%m-%d"),
-                format_duration(duration),
-                format_duration(daily_target_hours),
+                logic::format_duration(duration),
+                logic::format_duration(daily_target_hours),
                 percentage
             );
         }
@@ -251,8 +254,8 @@ fn handle_week_breakdown_report(
     println!(
         "  {:<25}: {} / {} ({:.2}%)",
         "Total for the week",
-        format_duration(total_duration),
-        format_duration(total_target_duration),
+        logic::format_duration(total_duration),
+        logic::format_duration(total_target_duration),
         total_percentage
     );
 
@@ -269,25 +272,25 @@ fn handle_progress_report(
     let target_duration =
         logic::get_target_duration_for_period(time_sheet, &config.work_hours, &reporting_period);
 
+    let bar_width = 6;
+
     if target_duration <= Duration::zero() {
-        // No target time set for today, so don't show a progress bar.
+        let bar = "-".repeat(bar_width);
+        println!("[{bar}] {}", logic::format_duration(total_duration));
         return Ok(());
     }
 
     let percentage =
         (total_duration.num_seconds() as f64 / target_duration.num_seconds() as f64) * 100.0;
-
-    let bar_width = 6;
     let filled_width = (percentage / 100.0 * bar_width as f64).round() as usize;
-    let bar = "█".repeat(filled_width.min(bar_width))
-        + &" ".repeat(bar_width.saturating_sub(filled_width));
 
-    if percentage >= 100.0 {
+    if total_duration > target_duration {
+        let bar = "-".repeat(bar_width);
         let overtime = total_duration - target_duration;
-        let overtime_hours = overtime.num_hours();
-        let overtime_minutes = overtime.num_minutes() % 60;
-        println!("[{bar}] +{overtime_hours:02}:{overtime_minutes:02}");
+        println!("[{bar}] +{}", format_duration_hm(overtime));
     } else {
+        let bar = "█".repeat(filled_width.min(bar_width))
+            + &" ".repeat(bar_width.saturating_sub(filled_width));
         println!("[{bar}] {percentage:.0}%");
     }
 
@@ -310,14 +313,75 @@ fn print_usage() {
     println!("  progress       - Show a progress bar for today's tracked time.");
 }
 
-/// Formats a Duration into a human-readable string (HH:MM:SS).
-fn format_duration(duration: Duration) -> String {
-    if duration < Duration::zero() {
-        return "00:00:00".to_string();
-    }
+/// Formats a Duration into a human-readable string (HH:MM).
+fn format_duration_hm(duration: Duration) -> String {
     let seconds = duration.num_seconds();
     let hours = seconds / 3600;
     let minutes = (seconds % 3600) / 60;
-    let seconds = seconds % 60;
-    format!("{hours:02}:{minutes:02}:{seconds:02}")
+    format!("{hours:02}:{minutes:02}")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_format_duration_hm_zero() {
+        assert_eq!(format_duration_hm(Duration::zero()), "00:00");
+    }
+
+    #[test]
+    fn test_format_duration_hm_minutes() {
+        assert_eq!(format_duration_hm(Duration::minutes(15)), "00:15");
+    }
+
+    #[test]
+    fn test_format_duration_hm_hours() {
+        assert_eq!(format_duration_hm(Duration::hours(3)), "03:00");
+    }
+
+    #[test]
+    fn test_format_duration_hm_mixed() {
+        assert_eq!(
+            format_duration_hm(Duration::hours(1) + Duration::minutes(30)),
+            "01:30"
+        );
+    }
+
+    #[test]
+    fn test_parse_time_spec_offset_positive() {
+        let spec = parse_time_spec("+1:30").unwrap();
+        match spec {
+            logic::TimeSpec::Offset(d) => assert_eq!(d, Duration::minutes(90)),
+            _ => panic!("Incorrect TimeSpec variant"),
+        }
+    }
+
+    #[test]
+    fn test_parse_time_spec_offset_negative() {
+        let spec = parse_time_spec("-0:45").unwrap();
+        match spec {
+            logic::TimeSpec::Offset(d) => assert_eq!(d, Duration::minutes(-45)),
+            _ => panic!("Incorrect TimeSpec variant"),
+        }
+    }
+
+    #[test]
+    fn test_parse_time_spec_absolute() {
+        let spec = parse_time_spec("14:20").unwrap();
+        match spec {
+            logic::TimeSpec::Absolute(t) => {
+                assert_eq!(t, NaiveTime::from_hms_opt(14, 20, 0).unwrap())
+            }
+            _ => panic!("Incorrect TimeSpec variant"),
+        }
+    }
+
+    #[test]
+    fn test_parse_time_spec_invalid() {
+        assert!(parse_time_spec("1:2").is_none());
+        assert!(parse_time_spec("25:00").is_none());
+        assert!(parse_time_spec("12:60").is_none());
+        assert!(parse_time_spec("abc").is_none());
+    }
 }
