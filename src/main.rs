@@ -273,10 +273,20 @@ fn handle_progress_report(
         logic::get_target_duration_for_period(time_sheet, &config.work_hours, &reporting_period);
 
     let bar_width = 6;
+    let tracking_indicator = if time_sheet.active_period_start.is_some() {
+        "▶"
+    } else {
+        "■"
+    };
 
     if target_duration <= Duration::zero() {
         let bar = "-".repeat(bar_width);
-        println!("[{bar}] {}", logic::format_duration(total_duration));
+        println!(
+            "{} [{}] {}",
+            tracking_indicator,
+            bar,
+            logic::format_duration(total_duration)
+        );
         return Ok(());
     }
 
@@ -287,11 +297,16 @@ fn handle_progress_report(
     if total_duration > target_duration {
         let bar = "-".repeat(bar_width);
         let overtime = total_duration - target_duration;
-        println!("[{bar}] +{}", format_duration_hm(overtime));
+        println!(
+            "{} [{}] +{}",
+            tracking_indicator,
+            bar,
+            format_duration_hm(overtime)
+        );
     } else {
         let bar = "█".repeat(filled_width.min(bar_width))
             + &" ".repeat(bar_width.saturating_sub(filled_width));
-        println!("[{bar}] {percentage:.0}%");
+        println!("{tracking_indicator} [{bar}] {percentage:.0}%");
     }
 
     Ok(())

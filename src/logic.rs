@@ -676,8 +676,7 @@ mod tests {
         let reporting_period = get_week_period().unwrap();
 
         // Mark a weekday as a sick day
-        let sick_day =
-            reporting_period.start.with_timezone(&Local).date_naive() + Duration::days(2); // Wednesday
+        let sick_day = reporting_period.start.with_timezone(&Local).date_naive();
         mark_sick_day(&mut time_sheet, sick_day).unwrap();
 
         let days_from_monday = today.weekday().num_days_from_monday();
@@ -687,10 +686,9 @@ mod tests {
             (days_from_monday as f32 + 1.0) * 8.0
         };
 
-        // If the sick day has passed, subtract its hours
-        if today.weekday().num_days_from_monday() >= 2 {
-            expected_hours -= 8.0;
-        }
+        // If the sick day has passed, subtract its hours.
+        // Since the sick day is Monday, it has always passed.
+        expected_hours -= 8.0;
 
         let result = get_target_duration_for_period(&time_sheet, &work_hours, &reporting_period);
         assert_eq!(result, Duration::hours(expected_hours as i64));
